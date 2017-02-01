@@ -98,8 +98,8 @@ case "$1" in
       exit -1
     fi
     source "$CONFDIR/swarm.cfg"
-    echo "swarm_docker='docker --tls --tlscacert=\"$2/ca.pem\" --tlscert=\"$2/cert.pem\" --tlskey=\"$2/key.pem\" --host=$MASTER_IP:2376'"
-    echo "swarm_ssh='ssh -i \"$2/ssh.private\" -o UserKnownHostsFile=\"$2/ssh.hostkey\" -l ubuntu $MASTER_IP'"
+    echo "alias swarm_docker='docker --tls --tlscacert=\"$2/ca.pem\" --tlscert=\"$2/cert.pem\" --tlskey=\"$2/key.pem\" --host=$MASTER_IP:2376'"
+    echo "alias swarm_ssh='ssh -i \"$2/ssh.private\" -o UserKnownHostsFile=\"$2/ssh.hostkey\" -l ubuntu $MASTER_IP'"
     ;;
   usage|*) 
     usage >&2
