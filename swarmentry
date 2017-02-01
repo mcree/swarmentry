@@ -1,0 +1,107 @@
+#!/bin/bash
+if [ ! -v CONFDIR ]; then
+  CONFDIR=/entry
+fi
+
+usage() {
+cat <<EOF
+usage: swarmentry command ARGS
+
+commands:
+
+    cmd		run a shell command
+		example: 
+		    cmd echo "hello"
+
+    bootstrap	set up initial environment in $CONFDIR
+		note:
+		    you should mount a persistent directory in $CONFDIR
+		    eg: docker run -v /tmp/myswarm:$CONFDIR mcreeiw/swarmentry bootstrap ...
+		parameters (in order): 
+		    IP		bootstrap IP address
+		    PORT	bootstrap TCP port
+		    TOKEN	bootstrap token
+		example:
+		    bootstrap	1.2.3.4 4990 0YwZAdpihVO2oTU77JJm9f4wAOtTB8fXVyMMm9aTvdahJYItzmQ8PzHLyNujBGnh
+
+    docker	run docker with ARGS command on swarm master
+		example:
+		    docker service ls
+
+    ssh		run ssh with ARGS on swarm master
+		notes:
+		    do not forget to use docker parameters -t and -i for interactive sessions
+		example:
+		    ssh hostname
+
+    eval	print configured aliases for ssh and docker
+		parameters (in order):
+		    CONFDIR	configuration file directory (populated by bootstrap command)
+		example:
+		    eval ~/myswarm
+		    
+    usage	print usage
+    
+EOF
+}
+
+case "$1" in
+  cmd) 
+    shift
+    exec "$@"
+    ;;
+  bootstrap)
+    if [ -f "$CONFDIR/swarm.cfg" ]; then
+      echo "! $CONFDIR/swarm.cfg exists - bailing out" >&2
+      exit -1
+    fi
+    MASTER_IP=$2
+    url="https://$2:$3/$4"
+    echo "+ bootstrapping from $url"
+    set -e
+    curl -fsSLk "$url/client/ca.pem" > $CONFDIR/ca.pem
+    curl -fsSLk "$url/client/cert.pem" > $CONFDIR/cert.pem
+    curl -fsSLk "$url/client/key.pem" > $CONFDIR/key.pem
+    curl -fsSLk "$url/ssh/private" > $CONFDIR/ssh.private
+    curl -fsSLk "$url/worker_token" > $CONFDIR/worker_token
+    curl -fsSLk "$url/manager_token" > $CONFDIR/manager_token
+    ssh-keyscan -t rsa $MASTER_IP > $CONFDIR/ssh.hostkey
+    cat $CONFDIR/ssh.hostkey >> /etc/ssh/ssh_known_hosts
+    cp "$0" $CONFDIR
+    chmod go-rw $CONFDIR/*
+    set +e
+    echo "BOOTSTRAP_URL=$url" > $CONFDIR/swarm.cfg
+    echo "MASTER_IP=$MASTER_IP" >> $CONFDIR/swarm.cfg
+    echo "+ done"
+    ;;
+  docker)
+    if [ ! -f "$CONFDIR/swarm.cfg" ]; then
+      echo "! $CONFDIR/swarm.cfg not found - please run bootstrap first!" >&2
+      exit -1
+    fi
+    source "$CONFDIR/swarm.cfg"
+    shift
+    docker --tls --tlscacert="$CONFDIR/ca.pem" --tlscert="$CONFDIR/cert.pem" --tlskey="$CONFDIR/key.pem" --host=$MASTER_IP:2376 "$@"
+    ;;
+  ssh)
+    if [ ! -f "$CONFDIR/swarm.cfg" ]; then
+      echo "! $CONFDIR/swarm.cfg not found - please run bootstrap first!" >&2
+      exit -1
+    fi
+    source "$CONFDIR/swarm.cfg"
+    shift
+    ssh -i "$CONFDIR/ssh.private" -o UserKnownHostsFile="$CONFDIR/ssh.hostkey" -l ubuntu $MASTER_IP "$@"
+    ;;
+  eval)
+    if [ ! -f "$CONFDIR/swarm.cfg" ]; then
+      echo "! $CONFDIR/swarm.cfg not found - please run bootstrap first!" >&2
+      exit -1
+    fi
+    source "$CONFDIR/swarm.cfg"
+    echo "swarm_docker='docker --tls --tlscacert=\"$2/ca.pem\" --tlscert=\"$2/cert.pem\" --tlskey=\"$2/key.pem\" --host=$MASTER_IP:2376'"
+    echo "swarm_ssh='ssh -i \"$2/ssh.private\" -o UserKnownHostsFile=\"$2/ssh.hostkey\" -l ubuntu $MASTER_IP'"
+    ;;
+  usage|*) 
+    usage >&2
+    ;;
+esac
